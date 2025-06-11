@@ -337,5 +337,114 @@ uvicorn main:app --reload --port 8000
 5.  **Configuration Management**: Use environment variables or configuration files for settings like `MODEL_STORAGE_PATH`, GPU usage, etc.
 6.  **Deployment**: Containerize the Python service (e.g., using Docker) for easier and consistent deployment.
 
+## 7. Connecting with the Next.js Project
+
+This section explains how to run the Python backend service and ensure it can communicate with your VoiceForge Studio Next.js application.
+
+### 7.1. Running the Python Backend Service
+
+1.  **Navigate to Python Service Directory**: Open your terminal and go to the directory where you saved the `main.py` file (and where you set up its virtual environment).
+2.  **Activate Virtual Environment**:
+    ```bash
+    source venv/bin/activate  # On Linux/macOS
+    # OR
+    venv\Scripts\activate     # On Windows
+    ```
+3.  **Start the FastAPI Server**:
+    ```bash
+    uvicorn main:app --reload --port 8000
+    ```
+    *   `--reload`: Enables auto-reload on code changes, useful for development.
+    *   `--port 8000`: Specifies the port. The Next.js application is currently configured to look for the Python service on this port.
+4.  **Verify**: You should see output in your terminal indicating the server is running, similar to:
+    ```
+    INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+    INFO:     Started reloader process [xxxxx] using WatchFiles
+    INFO:     Started server process [xxxxx]
+    INFO:     Waiting for application startup.
+    INFO:     Application startup complete.
+    Starting Python backend service on http://0.0.0.0:8000
+    Models will be stored in: /path/to/your/python_backend/trained_models
+    TTS endpoint: POST /api/tts
+    Train Voice endpoint: POST /api/train-voice
+    ```
+    Keep this terminal window open while the Python service is running.
+
+### 7.2. Next.js Configuration (Genkit Flows)
+
+Your Next.js application's Genkit flows are already set up to communicate with the Python backend at `http://localhost:8000/api`.
+
+*   This URL is defined by the `PYTHON_API_BASE_URL` constant in the following files within your Next.js project:
+    *   `src/ai/flows/voice-generation.ts`
+    *   `src/ai/flows/voice-customization.ts`
+    *   `src/ai/flows/voice-model-training.ts`
+
+*   **If you run the Python service on a different port or host (e.g., `http://127.0.0.1:8001/api`)**, you **must** update the `PYTHON_API_BASE_URL` constant in **all three** of these `.ts` files to match the new address of your Python service.
+
+### 7.3. File and Project Structure (Recommendation)
+
+The Python backend is a separate service from your Next.js frontend. It's best practice to keep its code in a distinct directory, separate from the Next.js project code.
+
+Here's a recommended project structure:
+
+```
+your_project_root_directory/
+├── voiceforge_nextjs_app/    # Your current Next.js project (contains src/, package.json, etc.)
+│   ├── src/
+│   ├── public/
+│   ├── package.json
+│   ├── tsconfig.json
+│   ├── next.config.ts
+│   ├── PYTHON_BACKEND_GUIDE.md # This guide (currently inside, could be at root)
+│   └── ...
+└── voiceforge_python_backend/  # Directory for the Python TTS service
+    ├── main.py                 # The Python FastAPI code from this guide
+    ├── trained_models/         # Directory created by the Python service for models
+    ├── venv/                   # Python virtual environment for this service
+    └── requirements.txt        # (Optional, good practice: pip freeze > requirements.txt)
+```
+
+*   Place the `main.py` (containing the Python/FastAPI code) inside the `voiceforge_python_backend` directory.
+*   Run the `uvicorn` command from within the `voiceforge_python_backend` directory.
+
+This separation:
+*   Keeps dependencies for each part (Node.js/Next.js vs. Python) isolated.
+*   Simplifies deployment if you decide to host them separately.
+*   Makes project management cleaner.
+
+### 7.4. Development Workflow
+
+1.  **Start Python Backend**: First, ensure your Python backend service is running (as described in section 7.1).
+2.  **Start Next.js App**: In a separate terminal, navigate to your Next.js project directory (`voiceforge_nextjs_app/`) and run the development server:
+    ```bash
+    npm run dev
+    ```
+3.  **Interaction Flow**:
+    *   You interact with the VoiceForge Studio UI in your browser (e.g., at `http://localhost:9002`).
+    *   When you trigger an action like "Generate Speech" or "Train Voice":
+        *   The Next.js frontend component calls a Genkit flow function (e.g., `generateSpeech`, `trainVoiceModel`).
+        *   These Genkit flows (which are server-side Next.js code) then make an HTTP `POST` request to the corresponding endpoint on your Python backend service (e.g., `http://localhost:8000/api/tts`).
+        *   The Python service processes the request using `coqui-ai/TTS`.
+        *   The Python service sends back a JSON response (e.g., audio data URI or training status).
+        *   The Genkit flow receives this response and returns it to the Next.js frontend component.
+        *   The UI updates accordingly.
+
+### 7.5. CORS (Cross-Origin Resource Sharing)
+
+*   The Python backend example (in `main.py`) includes CORS middleware. It's configured by default to allow requests from `http://localhost:9002` (the default port for the Next.js development server).
+*   **If your Next.js app runs on a different port during development**, you must add that origin to the `origins` list in your Python `main.py` file. For example, if Next.js runs on `http://localhost:3000`:
+    ```python
+    # In main.py
+    origins = [
+        "http://localhost:9002",
+        "http://127.0.0.1:9002",
+        "http://localhost:3000", # Add this line
+        "http://127.0.0.1:3000", # And this for consistency
+    ]
+    ```
+*   For **production deployment**, you will need to update the `origins` list to include the actual domain(s) where your Next.js frontend will be hosted.
+
+By following these steps, your Next.js application should be able to successfully communicate with the Python backend service for all TTS and voice training functionalities.
+
 This guide provides a functional starting point for your Python backend service. The core TTS functionality with zero-shot cloning using a reference audio should work with this setup. True fine-tuning is a more advanced topic requiring deeper integration with Coqui TTS's training tools.
       
