@@ -1,7 +1,8 @@
+
 'use server';
 
 /**
- * @fileOverview Flow for training a custom voice model using a user-provided audio sample.
+ * @fileOverview Flow for training a custom voice model using a user-provided audio sample, by calling an external Python API.
  *
  * - trainVoiceModel - A function that initiates the voice model training process.
  * - TrainVoiceModelInput - The input type for the trainVoiceModel function, including the audio sample.
@@ -11,12 +12,14 @@
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
+const PYTHON_API_BASE_URL = 'http://localhost:8000/api'; // Replace with your Python service URL if different
+
 // Define the input schema for the voice model training flow.
 const TrainVoiceModelInputSchema = z.object({
   audioDataUri: z
     .string()
     .describe(
-      'An audio sample of the user voice, as a data URI that must include a MIME type and use Base64 encoding. Expected format: \'data:<mimetype>;base64,<encoded_data>\'.' // Corrected the expected format
+      'An audio sample of the user voice, as a data URI that must include a MIME type and use Base64 encoding. Expected format: \'data:<mimetype>;base64,<encoded_data>\'.'
     ),
   modelName: z.string().describe('A name for the new voice model.'),
 });
@@ -26,8 +29,8 @@ export type TrainVoiceModelInput = z.infer<typeof TrainVoiceModelInputSchema>;
 const TrainVoiceModelOutputSchema = z.object({
   trainingStatus: z
     .string()
-    .describe('The status of the voice model training process.'),
-  modelId: z.string().optional().describe('The ID of the trained voice model.'),
+    .describe('The status of the voice model training process (e.g., "pending", "completed", "failed").'),
+  modelId: z.string().optional().describe('The ID of the trained voice model, if training is successful.'),
 });
 export type TrainVoiceModelOutput = z.infer<typeof TrainVoiceModelOutputSchema>;
 
@@ -43,20 +46,45 @@ const trainVoiceModelFlow = ai.defineFlow(
     inputSchema: TrainVoiceModelInputSchema,
     outputSchema: TrainVoiceModelOutputSchema,
   },
-  async input => {
-    // Placeholder implementation for voice model training.
-    // In a real application, this would involve calling an external service or API
-    // to handle the actual training process using the provided audio data.
+  async (input: TrainVoiceModelInput) => {
+    /**
+     * This flow calls an external Python API (e.g., using coqui/XTTS-v2) to train a voice model.
+     *
+     * Expected Python API endpoint: POST `${PYTHON_API_BASE_URL}/train-voice`
+     * Request body (JSON):
+     * {
+     *   "modelName": "string",
+     *   "audioDataUri": "data:audio/wav;base64,..."
+     * }
+     *
+     * Expected Python API response (JSON):
+     * {
+     *   "trainingStatus": "string (e.g., 'completed', 'pending', 'failed')",
+     *   "modelId": "string (optional, ID of the new model)"
+     * }
+     */
+    try {
+      const response = await fetch(`${PYTHON_API_BASE_URL}/train-voice`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(input),
+      });
 
-    // Simulate a successful training process.
-    console.log(`Simulating training voice model ${input.modelName} from audio sample.`);
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate training time.
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`External voice training API request failed with status ${response.status}: ${errorBody}`);
+      }
 
-    const modelId = `model-${Date.now()}`; // Generate a unique model ID.
-
-    return {
-      trainingStatus: 'completed',
-      modelId: modelId,
-    };
+      const result: TrainVoiceModelOutput = await response.json();
+      return result;
+    } catch (error) {
+      console.error('Error calling external voice training API:', error);
+      if (error instanceof Error) {
+        throw new Error(`Failed to train voice model via external API: ${error.message}`);
+      }
+      throw new Error('An unknown error occurred while training voice model via external API.');
+    }
   }
 );
